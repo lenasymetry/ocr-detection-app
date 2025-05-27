@@ -27,19 +27,27 @@ types_documents = {
     "Carte Vitale": ["CARTE", "VITALE", "ASSURANCE", "MALADIE"],
 }
 
-# Fonction de détection du type de document
 def detecter_type_document(texte):
     texte_up = texte.upper()
-    if "PASSEPORT" in texte_up and "RÉPUBLIQUE" in texte_up:
-        return "Passeport"
-    elif "TITRE DE SÉJOUR" in texte_up or "RESIDENCE PERMIT" in texte_up:
-        return "Titre de séjour"
-    elif "CARTE" in texte_up and "VITALE" in texte_up:
-        return "Carte Vitale"
-    elif "RÉPUBLIQUE" in texte_up and "FRANÇAISE" in texte_up:
+    
+    def au_moins_n_mots(mots, n=2):
+        compte = sum(1 for mot in mots if mot in texte_up)
+        return compte >= n
+    
+    if au_moins_n_mots(["RÉPUBLIQUE", "FRANÇAISE", "CARTE", "IDENTITÉ"], 2):
         return "Carte d'identité"
-    else:
-        return "Type inconnu"
+    
+    if au_moins_n_mots(["RÉPUBLIQUE", "FRANÇAISE", "PASSEPORT"], 2):
+        return "Passeport"
+    
+    if au_moins_n_mots(["RESIDENCE PERMIT", "TITRE DE SÉJOUR"], 1):
+        return "Titre de séjour"
+    
+    if au_moins_n_mots(["ASSURANCE", "MALADIE", "VITALE"], 2):
+        return "Carte Vitale"
+    
+    return "Type inconnu"
+
 
 # Fonction pour extraire l’identité (simplifiée)
 def extraire_identite(type_doc, texte):

@@ -47,7 +47,7 @@ uploaded_file = st.file_uploader("Choisir un fichier image", type=["png", "jpg",
 
 if uploaded_file:
     image = Image.open(uploaded_file)
-    st.image(image, caption="Image importée", use_column_width=True)
+    st.image(image, caption="Image importée", use_container_width=True)
 
     texte, mots, type_doc = reconnaitre_document(image)
 

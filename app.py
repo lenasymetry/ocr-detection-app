@@ -1,109 +1,116 @@
 import streamlit as st
-import pytesseract
 from PIL import Image
-import fitz  # PyMuPDF
-import numpy as np
+import pytesseract
+import pdf2image
+import tempfile
+import os
 import cv2
-import io
+import numpy as np
 
-# ------------------------
-# Logo
-# ------------------------
-logo = Image.open("mon_logo.png")
-st.image(logo, width=150)
+st.set_page_config(page_title="Détection OCR de documents", layout="wide")
 
-# ------------------------
-# Titre
-# ------------------------
-st.title("🧾 OCR Multi-documents : Détection du type")
-st.write("Importe plusieurs fichiers (PDF ou images) pour détecter le type de document.")
+# Logo (optionnel)
+try:
+    logo = Image.open("mon_logo.png")
+    st.image(logo, width=150)
+except:
+    pass
 
-# ------------------------
-# Mots-clés par type
-# ------------------------
+st.title("🧾 Détection OCR des types de documents")
+st.write("Importe une ou plusieurs images/PDF pour détecter s’il s’agit d’un passeport, carte d’identité, titre de séjour, etc.")
+
+# Liste des mots-clés par type de document
 types_documents = {
-    "Carte d'identité": ["RÉPUBLIQUE", "FRANÇAISE", "CARD", "NATIONALE", "NATIONALITÉ"],
-    "Passeport": ["PASSEPORT", "NUMÉRO", "AUTORITÉ", "DATE DE NAISSANCE", "SIGNATURE", "RÉPUBLIQUE"],
-    "Titre de séjour": ["SÉJOUR", "TITRE", "RÉSIDENCE", "RESIDENCE", "PERMIT"],
-    "Carte Vitale": ["ASSURANCE", "MALADIE", "CARTE", "VITALE"],
+    "Carte d'identité": ["RÉPUBLIQUE", "FRANÇAISE", "NATIONALE", "CNI"],
+    "Passeport": ["PASSEPORT", "RÉPUBLIQUE", "FRANÇAISE"],
+    "Titre de séjour": ["TITRE DE SÉJOUR", "RESIDENCE PERMIT", "PERMIS DE SÉJOUR"],
+    "Carte Vitale": ["CARTE", "VITALE", "ASSURANCE", "MALADIE"],
 }
 
-# ------------------------
-# OCR image
-# ------------------------
-def extraire_texte_image(image):
-    image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-    gris = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
-    texte = pytesseract.image_to_string(gris, lang="fra+eng")
+# Fonction de détection du type de document
+def detecter_type_document(texte):
+    texte_up = texte.upper()
+    if "PASSEPORT" in texte_up and "RÉPUBLIQUE" in texte_up:
+        return "Passeport"
+    elif "TITRE DE SÉJOUR" in texte_up or "RESIDENCE PERMIT" in texte_up:
+        return "Titre de séjour"
+    elif "CARTE" in texte_up and "VITALE" in texte_up:
+        return "Carte Vitale"
+    elif "RÉPUBLIQUE" in texte_up and "FRANÇAISE" in texte_up:
+        return "Carte d'identité"
+    else:
+        return "Type inconnu"
+
+# Fonction pour extraire l’identité (simplifiée)
+def extraire_identite(type_doc, texte):
+    lignes = [l.strip() for l in texte.splitlines() if l.strip()]
+    nom = prenom = None
+
+    if type_doc == "Carte d'identité":
+        for i, l in enumerate(lignes):
+            if "NOM" in l.upper() and i + 1 < len(lignes):
+                nom = lignes[i + 1]
+            if "PRÉNOM" in l.upper() and i + 1 < len(lignes):
+                prenom = lignes[i + 1]
+
+    elif type_doc == "Carte Vitale":
+        maj = [l for l in lignes if l.isupper()]
+        if len(maj) >= 2:
+            prenom, nom = maj[-2], maj[-1]
+
+    elif type_doc == "Titre de séjour":
+        for i, l in enumerate(lignes):
+            if "NOM PRÉNOM" in l.upper() or "NOM PRÉNOMS" in l.upper():
+                if i + 1 < len(lignes):
+                    full = lignes[i + 1].split()
+                    if len(full) >= 2:
+                        nom = full[0]
+                        prenom = " ".join(full[1:])
+
+    return nom, prenom
+
+# Traitement OCR pour une image
+def ocr_image(pil_image):
+    image_cv = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
+    texte = pytesseract.image_to_string(gray, lang='fra+eng')
     return texte
 
-# ------------------------
-# Détection type document
-# ------------------------
-def reconnaitre_document(image):
-    texte = extraire_texte_image(image)
-    mots_trouves = set()
-    type_reconnu = "Type inconnu"
-
-    for type_doc, mots in types_documents.items():
-        for mot in mots:
-            if mot.upper() in texte.upper():
-                mots_trouves.add(mot)
-        if len(mots_trouves.intersection(mots)) >= 2:
-            type_reconnu = type_doc
-            break
-
-    return texte, mots_trouves, type_reconnu
-
-# ------------------------
-# Chargement PDF -> Image
-# ------------------------
-def convertir_pdf_en_image(pdf_bytes):
-    images = []
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    for page in doc:
-        pix = page.get_pixmap(dpi=200)
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        images.append(img)
+# Traitement PDF → images
+def convert_pdf_to_images(pdf_file):
+    with tempfile.TemporaryDirectory() as path:
+        images = pdf2image.convert_from_bytes(pdf_file.read(), dpi=200, output_folder=path)
     return images
 
-# ------------------------
-# Upload multi-fichiers
-# ------------------------
-uploaded_files = st.file_uploader(
-    "Choisis un ou plusieurs fichiers (PDF, JPG, PNG...)",
-    type=["pdf", "png", "jpg", "jpeg", "bmp", "tiff"],
-    accept_multiple_files=True
-)
+# Interface d'import
+uploaded_files = st.file_uploader("📤 Importer un ou plusieurs fichiers (image ou PDF)", type=["png", "jpg", "jpeg", "pdf"], accept_multiple_files=True)
 
-# ------------------------
-# Traitement de chaque fichier
-# ------------------------
 if uploaded_files:
-    for file in uploaded_files:
+    for fichier in uploaded_files:
         st.divider()
-        st.markdown(f"### 📄 Fichier : `{file.name}`")
+        st.subheader(f"📄 Fichier : {fichier.name}")
 
-        ext = file.name.lower().split(".")[-1]
-
-        if ext == "pdf":
-            images = convertir_pdf_en_image(file.read())
+        # PDF
+        if fichier.type == "application/pdf":
+            images = convert_pdf_to_images(fichier)
         else:
-            images = [Image.open(file)]
+            images = [Image.open(fichier)]
 
-        for idx, image in enumerate(images):
-            if len(images) > 1:
-                st.markdown(f"#### 🖼️ Page {idx+1}")
-            else:
-                st.markdown("#### 🖼️ Image détectée")
+        # OCR
+        full_text = ""
+        for img in images:
+            texte = ocr_image(img)
+            full_text += texte + "\n"
 
-            st.image(image, use_column_width=True)
+        # Détection
+        type_doc = detecter_type_document(full_text)
+        nom, prenom = extraire_identite(type_doc, full_text)
 
-            texte, mots, type_doc = reconnaitre_document(image)
+        st.markdown(f"**📘 Type détecté :** `{type_doc}`")
+        if nom or prenom:
+            st.markdown(f"**👤 Nom détecté :** `{nom}`")
+            st.markdown(f"**👤 Prénom détecté :** `{prenom}`")
+        with st.expander("📝 Texte OCR brut"):
+            st.text(full_text)
 
-            st.markdown(f"**Type détecté :** `{type_doc}`")
-            st.markdown(f"**Mots-clés trouvés :** {', '.join(mots) if mots else 'Aucun'}")
-
-            with st.expander("📝 Texte OCR brut"):
-                st.text(texte)
 

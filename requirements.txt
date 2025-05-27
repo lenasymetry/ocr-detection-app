@@ -1,5 +1,5 @@
 streamlit
 pytesseract
+pdf2image
 Pillow
-numpy
 opencv-python-headless
